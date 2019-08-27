@@ -1,0 +1,81 @@
+diff --git a/frameworks/native/services/inputflinger/EventHub.cpp b/frameworks/native/services/inputflinger/EventHub.cpp
+old mode 100644
+new mode 100755
+index 2bcc5c7..1542a7b
+--- a/frameworks/native/services/inputflinger/EventHub.cpp
++++ b/frameworks/native/services/inputflinger/EventHub.cpp
+@@ -64,6 +64,11 @@
+ #define INDENT2 "    "
+ #define INDENT3 "      "
+ 
++// for multi touch panel
++#define DEVICE_MATCH_METHOD_MAX 10
++#define USB_LOCATION_MATCH_START 13 //"usb-ff540000."
++#define USB_LOCATION_MATCH_LEN 7 //"usb-1.1"
++
+ namespace android {
+ 
+ static const char *WAKE_LOCK_ID = "KeyEvents";
+@@ -1184,17 +1189,17 @@ status_t EventHub::openDeviceLocked(const char *devicePath) {
+     int32_t deviceId = mNextDeviceId++;
+     Device* device = new Device(fd, deviceId, String8(devicePath), identifier);
+ 
+-    ALOGV("add device %d: %s\n", deviceId, devicePath);
+-    ALOGV("  bus:        %04x\n"
++    ALOGI("add device %d: %s\n", deviceId, devicePath);
++    ALOGI("  bus:        %04x\n"
+          "  vendor      %04x\n"
+          "  product     %04x\n"
+          "  version     %04x\n",
+         identifier.bus, identifier.vendor, identifier.product, identifier.version);
+-    ALOGV("  name:       \"%s\"\n", identifier.name.string());
+-    ALOGV("  location:   \"%s\"\n", identifier.location.string());
+-    ALOGV("  unique id:  \"%s\"\n", identifier.uniqueId.string());
+-    ALOGV("  descriptor: \"%s\"\n", identifier.descriptor.string());
+-    ALOGV("  driver:     v%d.%d.%d\n",
++    ALOGI("  name:       \"%s\"\n", identifier.name.string());
++    ALOGI("  location:   \"%s\"\n", identifier.location.string());
++    ALOGI("  unique id:  \"%s\"\n", identifier.uniqueId.string());
++    ALOGI("  descriptor: \"%s\"\n", identifier.descriptor.string());
++    ALOGI("  driver:     v%d.%d.%d\n",
+         driverVersion >> 16, (driverVersion >> 8) & 0xff, driverVersion & 0xff);
+ 
+     // Load the configuration file for the device.
+@@ -1357,10 +1362,35 @@ status_t EventHub::openDeviceLocked(const char *devicePath) {
+     }
+ 
+     // Determine whether the device is external or internal.
+-    if (isExternalDeviceLocked(device)) {
++    if((device->classes & 0x04) == INPUT_DEVICE_CLASS_TOUCH) {
++        int count = 0;
++        char flag[DEVICE_MATCH_METHOD_MAX][PROPERTY_VALUE_MAX];
++        char value[PROPERTY_VALUE_MAX] = {0};
++    
++        property_get("ro.input.external", value, "");
++
++        if (isExternalDeviceLocked(device)) {
++            sprintf(flag[count++], "%04x:%04x", identifier.vendor, identifier.product);
++            if (identifier.location.length() >= USB_LOCATION_MATCH_START+USB_LOCATION_MATCH_LEN) {
++                strncpy(flag[count++], identifier.location.string()+USB_LOCATION_MATCH_START, USB_LOCATION_MATCH_LEN);
++            }
++        } else {
++            sprintf(flag[count++], "%s", device->identifier.name.string());
++        }
++
++        for (int i=0; i<count; i++) {
++            ALOGI("openDeviceLocked:%d, value=%s flag=%s\n", __LINE__, value, flag[i]);
++            if (strstr(value, flag[i])) {
++                device->classes |= INPUT_DEVICE_CLASS_EXTERNAL;
++                ALOGI("openDeviceLocked:%d, name:\"%s\" id:%d device_class:%x vid:%04x pid:%04x is external input device\n",
++                    __LINE__, device->identifier.name.string(), device->id, device->classes, identifier.vendor, identifier.product);
++                break;
++            }
++        }
++    } else {
+         device->classes |= INPUT_DEVICE_CLASS_EXTERNAL;
+     }
+-
++    
+     if (device->classes & (INPUT_DEVICE_CLASS_JOYSTICK | INPUT_DEVICE_CLASS_DPAD)
+             && device->classes & INPUT_DEVICE_CLASS_GAMEPAD) {
+         device->controllerNumber = getNextControllerNumberLocked(device);
